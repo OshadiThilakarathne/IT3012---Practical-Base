@@ -2,6 +2,7 @@ import random
 from collections import deque
 import heapq
 import math
+from logic_engine import KnowledgeBase
 
 
 class GreedyGridAgent:
@@ -25,6 +26,21 @@ class SearchAgent:
 
         # Select the search algorithm
         self.active_algo = 'AStar'
+
+        # Create the Knowledge Base
+        self.kb = KnowledgeBase()
+
+        # Rule 1: TargetVisible AND HasDust => SafeToEngage
+        self.kb.tell_rule(
+            ['TargetVisible', 'HasDust'],
+            'SafeToEngage'
+        )
+
+        # Rule 2: SafeToEngage AND BloodseekerMissing => Retreat
+        self.kb.tell_rule(
+            ['SafeToEngage', 'BloodseekerMissing'],
+            'Retreat'
+        )
 
     def manhattan_distance(self, pos, goal):
         """Calculate Manhattan distance."""
@@ -174,9 +190,14 @@ class SearchAgent:
         goal_pos,
         walls,
         grid_size,
-        heuristic_type='manhattan'
+        heuristic_type='manhattan',
+        tile_facts=None
     ):
         """A* Search using f(n) = g(n) + h(n)."""
+
+        # Use an empty dictionary if no tile facts are provided
+        if tile_facts is None:
+            tile_facts = {}
 
         # Priority queue
         frontier = []
@@ -205,8 +226,6 @@ class SearchAgent:
         # f(n) = g(n) + h(n)
         f_cost = g_cost + h_cost
 
-        # Required A* tuple:
-        # (f_cost, g_cost, current_pos, path_taken)
         heapq.heappush(
             frontier,
             (
@@ -219,7 +238,6 @@ class SearchAgent:
 
         while frontier:
 
-            # Get node with the lowest f_cost
             f_cost, g_cost, current_pos, path_taken = heapq.heappop(
                 frontier
             )
@@ -244,6 +262,20 @@ class SearchAgent:
 
                 # Skip already reached states
                 if next_state in reached_states:
+                    continue
+
+                # Clear facts from previous tile
+                self.kb.clear_facts()
+
+                # Add facts for this neighboring tile
+                for fact in tile_facts.get(next_state, []):
+                    self.kb.tell_fact(fact)
+
+                # Run Forward Chaining
+                self.kb.forward_chain()
+
+                # Retreat means the tile is infeasible
+                if 'Retreat' in self.kb.facts:
                     continue
 
                 # Calculate g(n)
@@ -319,6 +351,19 @@ class SearchAgent:
                 for wall in percept['walls']
             }
 
+            # Sample logical facts for specific tiles
+            tile_facts = {
+                (1, 0): [
+                    'TargetVisible',
+                    'HasDust',
+                    'BloodseekerMissing'
+                ],
+                (0, 1): [
+                    'TargetVisible',
+                    'HasDust'
+                ]
+            }
+
             # Select the search algorithm
             if self.active_algo == 'BFS':
 
@@ -354,7 +399,8 @@ class SearchAgent:
                     target_food,
                     walls,
                     grid_size,
-                    heuristic_type='manhattan'
+                    heuristic_type='manhattan',
+                    tile_facts=tile_facts
                 )
 
             else:
